@@ -16,27 +16,29 @@ struct MilliEmbedded {
 #[pymethods]
 impl MilliEmbedded {
     #[new]
-    fn new(index_path: &str, searchable_fields: Vec<String>, filterable_fields: HashSet<String>) -> PyResult<Self> {
+    fn new(index_path: &str, primary_key: String, searchable_fields: Vec<String>, filterable_fields: HashSet<String>) -> PyResult<Self> {
         std::fs::create_dir_all(&index_path)
             .map_err(|e| PyRuntimeError::new_err(format!("Cannot create index path: {e}")))?;
 
-        let options = EnvOpenOptions::new();
+        let mut options = EnvOpenOptions::new();
+        options.map_size(100 * 1024 * 1024 * 1024); // 100 GB
         let index = milli::Index::new(options, index_path)
             .map_err(|e| PyRuntimeError::new_err(format!("Cannot create index, {e}")))?;
 
         let mut wtxn = index.write_txn().unwrap();
         let config = IndexerConfig::default();
         let mut builder = Settings::new(&mut wtxn, &index, &config);
+        builder.set_primary_key(primary_key);
         builder.set_searchable_fields(searchable_fields);
         builder.set_filterable_fields(filterable_fields);
-        builder.set_criteria(vec![
-            Criterion::Words,
-            Criterion::Typo,
-            Criterion::Proximity,
-            Criterion::Attribute,
-            Criterion::Sort,
-            Criterion::Exactness,
-        ]);
+        // builder.set_criteria(vec![
+        //     Criterion::Proximity,
+        //     Criterion::Words,
+        //     Criterion::Typo,
+        //     Criterion::Attribute,
+        //     Criterion::Sort,
+        //     Criterion::Exactness,
+        // ]);
 
         builder.execute(|_| (), || false).map_err(|e| PyRuntimeError::new_err(format!("Cannot execute index builder, {e}")))?;
 
@@ -97,7 +99,7 @@ impl MilliEmbedded {
         Ok((build_res.indexed_documents, build_res.number_of_documents))
     }
 
-    fn search(&self, py: Python, query: String, return_fields: HashSet<String>) -> PyResult<String> {
+    fn search(&self, py: Python, query: String, return_fields: HashSet<String>, from: usize, length: usize) -> PyResult<String> {
         py.allow_threads(|| {
             let txn = self.index.read_txn().map_err(|e| PyRuntimeError::new_err(format!("{}", e)))?;
             let mut ctx = SearchContext::new(&self.index, &txn).map_err(|e| PyRuntimeError::new_err(format!("{}", e)))?;
@@ -111,8 +113,8 @@ impl MilliEmbedded {
                 universe,
                 &None,
                 GeoSortStrategy::default(),
-                0,
-                20,
+                from,
+                length,
                 None,
                 &mut DefaultSearchLogger,
                 &mut DefaultSearchLogger,
