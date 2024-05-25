@@ -1,0 +1,16 @@
+[package]
+name = "milli-py"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "milli_py"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.21.2", features = ["abi3", "abi3-py311"] }
+milli = { path = "./thirdparty/meilisearch/milli", features = ["all-tokenizations"] }
+heed = "0.20.1"
+serde = "1.0.202"
+serde_json = "1.0.117"
